@@ -1,0 +1,52 @@
+name: Build Kylin ARM64 desktop trial
+
+# Reuse the validated CLI archive; no product sources or desktop release feeds change.
+on:
+  push:
+    branches: [build/kylin-arm64-desktop]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: kylin-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  desktop:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+
+      - name: Check launcher syntax
+        run: |
+          node --check .github/kylin-desktop/main.mjs
+          bash -n .github/kylin-desktop/start.sh
+          bash -n .github/kylin-desktop/doctor.sh
+          python3 -m py_compile .github/kylin-desktop/assemble.py
+
+      - name: Download the pinned successful backend artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: dsh-kylin-arm64-0.2.2-rc.5
+          path: backend-artifact
+          run-id: '44690708637'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Assemble and inspect Linux ARM64 desktop archive
+        run: python3 .github/kylin-desktop/assemble.py
+
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: ${{ env.ARCHIVE_NAME }}
+          path: dist-desktop/
+          if-no-files-found: error
+          retention-days: 14
