@@ -19,6 +19,7 @@ class DesktopTrial {
 
   constructor() {
     mkdirSync(join(this.home, 'logs'), { recursive: true, mode: 0o700 })
+    mkdirSync(join(this.home, 'desktop-browser'), { recursive: true, mode: 0o700 })
     this.logPath = join(this.home, 'logs', `desktop-${Date.now()}-${process.pid}.log`)
     app.setName('DSH 内网试用版')
     app.setPath('userData', join(this.home, 'desktop-browser'))
@@ -46,11 +47,12 @@ class DesktopTrial {
   fail(error) {
     if (this.failed || this.stopping) return
     this.failed = true
-    const message = error instanceof Error ? error.stack || error.message : String(error)
+    const message = (error instanceof Error ? error.stack || error.message : String(error))
+      .replace(/([?&]token=)[A-Za-z0-9_-]+/gu, '$1[redacted]')
     console.error(message)
     try { this.log(message) }
     catch (logError) { console.error('无法写入日志', logError) }
-    try { dialog.showErrorBox('DSH 启动或运行失败', `请保留日志并反馈：\n${this.logPath}\n\n${String(error)}`) }
+    try { dialog.showErrorBox('DSH 启动或运行失败', `请保留日志并反馈：\n${this.logPath}\n\n${message}`) }
     catch (dialogError) { console.error('无法显示错误窗口', dialogError) }
     app.quit()
   }
@@ -106,8 +108,12 @@ class DesktopTrial {
       try { return new URL(value).origin === url.origin }
       catch (invalidUrl) { this.log(`已阻止无效的导航地址：${invalidUrl}`); return false }
     }
-    session.defaultSession.setPermissionRequestHandler((_contents, _permission, respond) => respond(false))
-    session.defaultSession.setPermissionCheckHandler(() => false)
+    session.defaultSession.setPermissionRequestHandler((_contents, permission, respond, details) => {
+      respond(permission === 'clipboard-sanitized-write' && ownOrigin(details.requestingUrl))
+    })
+    session.defaultSession.setPermissionCheckHandler((_contents, permission, requestingOrigin) => {
+      return permission === 'clipboard-sanitized-write' && ownOrigin(requestingOrigin)
+    })
     const window = new BrowserWindow({
       title: 'DSH 内网试用版', width: 1280, height: 850, show: false,
       webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true },
